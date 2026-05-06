@@ -1,0 +1,220 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  AGENT
+  VIEWER
+}
+
+enum Channel {
+  WEB_CHAT
+  WHATSAPP
+  EMAIL
+  VOICE
+  API
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  BOT_HANDLING
+  HUMAN_HANDLING
+  RESOLVED
+  CLOSED
+}
+
+enum MessageSenderType {
+  CUSTOMER
+  AGENT
+  AI
+  SYSTEM
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_ON_CUSTOMER
+  ESCALATED
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum SentimentLabel {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+  ANGRY
+  CONFUSED
+}
+
+model Organization {
+  id            String         @id @default(uuid())
+  name          String
+  slug          String         @unique
+  users         User[]
+  customers     Customer[]
+  conversations Conversation[]
+  tickets       Ticket[]
+  articles      KnowledgeArticle[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model User {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fullName       String
+  email          String       @unique
+  passwordHash   String
+  role           UserRole     @default(AGENT)
+  avatarUrl      String?
+  isActive       Boolean      @default(true)
+  assignedTickets Ticket[]    @relation("AssignedTickets")
+  messages       Message[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+}
+
+model Customer {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fullName       String
+  email          String?
+  phone          String?
+  country        String?
+  avatarUrl      String?
+  metadata       Json?
+  notes          String?
+  conversations  Conversation[]
+  tickets        Ticket[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@index([email])
+  @@index([phone])
+}
+
+model Conversation {
+  id             String              @id @default(uuid())
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerId     String
+  customer       Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  channel        Channel             @default(WEB_CHAT)
+  status         ConversationStatus  @default(BOT_HANDLING)
+  subject        String?
+  summary        String?
+  sentiment      SentimentLabel?
+  aiConfidence   Float?
+  humanTakeover  Boolean             @default(false)
+  messages       Message[]
+  tickets        Ticket[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([status])
+}
+
+model Message {
+  id             String            @id @default(uuid())
+  conversationId String
+  conversation   Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderType     MessageSenderType
+  senderUserId   String?
+  senderUser     User?             @relation(fields: [senderUserId], references: [id])
+  body           String
+  attachments    Json?
+  sentiment      SentimentLabel?
+  aiMeta         Json?
+  createdAt      DateTime          @default(now())
+
+  @@index([conversationId])
+}
+
+model Ticket {
+  id             String          @id @default(uuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerId     String
+  customer       Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  conversationId String?
+  conversation   Conversation?   @relation(fields: [conversationId], references: [id])
+  assignedToId   String?
+  assignedTo     User?           @relation("AssignedTickets", fields: [assignedToId], references: [id])
+  title          String
+  description    String
+  status         TicketStatus    @default(OPEN)
+  priority       TicketPriority  @default(MEDIUM)
+  aiSummary      String?
+  tags           String[]        @default([])
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([status])
+  @@index([priority])
+}
+
+model KnowledgeArticle {
+  id             String           @id @default(uuid())
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  title          String
+  content        String
+  category       String?
+  isPublished    Boolean          @default(true)
+  chunks         KnowledgeChunk[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([organizationId])
+}
+
+model KnowledgeChunk {
+  id             String            @id @default(uuid())
+  articleId      String
+  article        KnowledgeArticle  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  content        String
+  embedding      Json?
+  tokenCount     Int?
+  createdAt      DateTime          @default(now())
+
+  @@index([articleId])
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String?
+  actorUserId    String?
+  action         String
+  entityType     String
+  entityId       String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([actorUserId])
+}

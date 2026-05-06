@@ -1,0 +1,13 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../database/prisma.service';
+import { AiService } from '../ai/ai.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { CreateConversationDto, CreateMessageDto } from './dto';
+@Injectable() export class ConversationsService { constructor(private prisma:PrismaService, private ai:AiService, private realtime:RealtimeGateway){}
+ async create(orgId:string,dto:CreateConversationDto){ const c=await this.prisma.conversation.create({data:{organizationId:orgId,customerId:dto.customerId,channel:dto.channel||'WEB_CHAT',subject:dto.subject,messages:dto.firstMessage?{create:{senderType:'CUSTOMER',body:dto.firstMessage}}:undefined},include:{messages:true,customer:true}}); this.realtime.broadcast('conversation:created',c); return c; }
+ list(orgId:string){ return this.prisma.conversation.findMany({where:{organizationId:orgId},include:{customer:true,messages:{take:1,orderBy:{createdAt:'desc'}}},orderBy:{updatedAt:'desc'}}); }
+ async get(orgId:string,id:string){ const c=await this.prisma.conversation.findFirst({where:{id,organizationId:orgId},include:{customer:true,messages:{orderBy:{createdAt:'asc'}},tickets:true}}); if(!c) throw new NotFoundException('Conversation not found'); return c; }
+ async addMessage(orgId:string,id:string,dto:CreateMessageDto,userId?:string){ await this.get(orgId,id); const sentiment=await this.ai.analyzeSentiment(dto.body); const msg=await this.prisma.message.create({data:{conversationId:id,senderType:dto.senderType||'AGENT',senderUserId:userId,body:dto.body,sentiment:sentiment.label}}); await this.prisma.conversation.update({where:{id},data:{sentiment:sentiment.label,status: sentiment.shouldEscalate?'HUMAN_HANDLING':undefined}}); this.realtime.broadcast('conversation:new-message',{conversationId:id,message:msg}); return msg; }
+ async aiReply(orgId:string,id:string){ const convo=await this.get(orgId,id); const last=convo.messages.at(-1); const context=convo.messages.slice(-6).map(m=>`${m.senderType}: ${m.body}`).join('\n'); const ai=await this.ai.generateSupportReply({customerMessage:last?.body||'',context}); const msg=await this.prisma.message.create({data:{conversationId:id,senderType:'AI',body:ai.reply,aiMeta:ai as any}}); await this.prisma.conversation.update({where:{id},data:{aiConfidence:ai.confidence,status:'BOT_HANDLING'}}); this.realtime.broadcast('conversation:ai-reply',{conversationId:id,message:msg}); return msg; }
+ async takeover(orgId:string,id:string){ await this.get(orgId,id); const c=await this.prisma.conversation.update({where:{id},data:{humanTakeover:true,status:'HUMAN_HANDLING'}}); this.realtime.broadcast('conversation:takeover',c); return c; }
+}
