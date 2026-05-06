@@ -1,8 +1,8 @@
 # AI Customer Support Command Center API
 
-Enterprise-grade backend starter for an AI-powered support platform: **Intercom + Zendesk + AI + analytics**.
+Enterprise-grade backend system for an AI-powered support platform: **Intercom + Zendesk + AI + analytics**.
 
-This ZIP contains the API side only. It is designed so the frontend can later consume clean REST endpoints and realtime Socket.IO events.
+This Project contains the API side only. It is designed so the frontend can later consume clean REST endpoints and realtime Socket.IO events.
 
 ---
 
